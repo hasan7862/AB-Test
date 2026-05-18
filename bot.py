@@ -7,7 +7,9 @@ from aiohttp import web as aio_web
 from datetime import datetime, timedelta
 from collections import defaultdict
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, ChatPermissions
+    Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, ChatPermissions,
+    BotCommandScopeDefault, BotCommandScopeAllGroupAdmins,
+    BotCommandScopeAllPrivateChats, BotCommandScopeChat
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -1303,45 +1305,26 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     all_chats = db_get_all_chats()
 
-    # কোন গ্রুপে বট admin আছে তা গণনা করো
-    admin_chats   = []
-    unknown_chats = []
+    admin_count   = 0
+    no_admin_count = 0
 
     for chat_id in all_chats:
         try:
             if await is_bot_admin(ctx.bot, chat_id):
-                chat = await ctx.bot.get_chat(chat_id)
-                title = getattr(chat, 'title', None) or str(chat_id)
-                admin_chats.append(f"  ✅ {title} (`{chat_id}`)")
+                admin_count += 1
             else:
-                chat = await ctx.bot.get_chat(chat_id)
-                title = getattr(chat, 'title', None) or str(chat_id)
-                unknown_chats.append(f"  ❌ {title} (`{chat_id}`)")
+                no_admin_count += 1
         except Exception:
-            unknown_chats.append(f"  ⚠️ `{chat_id}` (এক্সেস নেই)")
+            no_admin_count += 1
 
-    all_users  = db_get_all_users()
-    total_users = len(all_users)
-
-    text_lines = [
-        "📊 *Bot Status Report*\n",
-        f"🤖 *Admin আছি এমন গ্রুপ:* {len(admin_chats)} টি",
-        f"❌ *Admin নেই এমন গ্রুপ:* {len(unknown_chats)} টি",
-        f"👤 *Private ইউজার (broadcast):* {total_users} জন",
-        "",
-    ]
-
-    if admin_chats:
-        text_lines.append("*✅ Admin হিসেবে আছি:*")
-        text_lines.extend(admin_chats)
-        text_lines.append("")
-
-    if unknown_chats:
-        text_lines.append("*❌ Admin নেই / এক্সেস নেই:*")
-        text_lines.extend(unknown_chats)
+    total_users = len(db_get_all_users())
 
     await update.message.reply_text(
-        "\n".join(text_lines),
+        "📊 *Bot Status Report*\n\n"
+        f"✅ *Admin হিসেবে আছি:* {admin_count} টি গ্রুপে\n"
+        f"❌ *Admin নেই:* {no_admin_count} টি গ্রুপে\n"
+        f"📦 *মোট গ্রুপ:* {len(all_chats)} টি\n"
+        f"👤 *Private ইউজার:* {total_users} জন",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -1483,9 +1466,40 @@ async def main():
     ))
 
     await app.initialize()
-    await app.bot.set_my_commands([
-        BotCommand("start", "👮‍♂️ About this bot"),
-    ])
+
+    # ── Default (সবার জন্য — private ও group) ──
+    await app.bot.set_my_commands(
+        [BotCommand("start", "👮‍♂️ বট সম্পর্কে জানুন / About this bot")],
+        scope=BotCommandScopeDefault()
+    )
+
+    # ── শুধু Private chat এ দেখাবে ──
+    await app.bot.set_my_commands(
+        [BotCommand("start", "👮‍♂️ বট সম্পর্কে জানুন / About this bot")],
+        scope=BotCommandScopeAllPrivateChats()
+    )
+
+    # ── সব গ্রুপের Admin দের জন্য ──
+    await app.bot.set_my_commands(
+        [
+            BotCommand("mute",  "🔇 Reply করে ইউজার মিউট করুন — /mute 2 (ঘন্টা)"),
+            BotCommand("kick",  "👢 Reply করে ইউজার কিক করুন"),
+            BotCommand("ban",   "🚫 Reply করে ইউজার ব্যান করুন"),
+        ],
+        scope=BotCommandScopeAllGroupAdmins()
+    )
+
+    # ── শুধু তোমার জন্য (ADMIN_ID) — Private chat ──
+    await app.bot.set_my_commands(
+        [
+            BotCommand("start",      "👮‍♂️ বট সম্পর্কে জানুন"),
+            BotCommand("status",     "📊 বটের বর্তমান অবস্থা দেখুন"),
+            BotCommand("bc_all",     "📡 সব গ্রুপ ও ইউজারে Broadcast করুন"),
+            BotCommand("bc_groups",  "📢 শুধু গ্রুপগুলোতে Broadcast করুন"),
+            BotCommand("bc_users",   "👤 শুধু Private ইউজারদের Broadcast করুন"),
+        ],
+        scope=BotCommandScopeChat(chat_id=ADMIN_ID)
+    )
 
     await app.start()
     await app.updater.start_polling(
