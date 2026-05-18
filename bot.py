@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from telegram import (
     Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, ChatPermissions,
-    BotCommandScopeDefault, BotCommandScopeAllGroupAdmins,
+    BotCommandScopeDefault, BotCommandScopeAllChatAdministrators,
     BotCommandScopeAllPrivateChats, BotCommandScopeChat
 )
 from telegram.ext import (
@@ -1486,7 +1486,7 @@ async def main():
             BotCommand("kick",  "👢 Reply করে ইউজার কিক করুন"),
             BotCommand("ban",   "🚫 Reply করে ইউজার ব্যান করুন"),
         ],
-        scope=BotCommandScopeAllGroupAdmins()
+        scope=BotCommandScopeAllChatAdministrators()
     )
 
     # ── শুধু তোমার জন্য (ADMIN_ID) — Private chat ──
